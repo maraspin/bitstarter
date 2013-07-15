@@ -30,39 +30,43 @@ var program = require('commander');
 var rest = require('restler');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
+var CHECKSFILE_DEFAULT = "checks.json";
 var URL_DEFAULT = "http://serene-meadow-2070.herokuapp.com";
 
 
 
+var checkFromUrl = function(url) { 
+        rest.get(url).on('complete', function(result) {
+          if (result instanceof Error) {
+               console.log("Problem loading URL: %s. Exiting.", url);
+               process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
+          } else {
+		doChecks(result);
+          }
+        });
+	return true;
+}
 
+var checkFromFile = function(file) {
+     fs.readFile(file, function (err, data) {
+     if (err) {
+          console.log("Problem loading File: %s. Exiting.", file);
+          process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
+     }
+     doChecks(data);
+  });
 
-var buildfn = function() {
-    var response = function(result, response) {
-        if (result instanceof Error) {
-            console.error('Error: ' + util.format(response.message));
-	}
-    return response;
-};
+}
 
-
-
-/*
-var assertValidUrl = function(url) {
-    var instr = url.toString();
-    if(!fs.existsSync(instr)) {
-        console.log("%s does not exist. Exiting.", instr);
-        process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
-    }
-    return instr;
-};
-*/
+var doChecks = function(data) {
+  var result = checkHtmlFile(cheerio.load(data), checksFile);    
+  var out = JSON.stringify(result, null, 4);  
+  console.log(out);
+}
 
 
 var assertFileExists = function(infile) {
     var instr = infile.toString();
-    var response = buildfn();
-    rest.get(apiurl).on('complete', response);
-
     if(!fs.existsSync(instr)) {
         console.log("%s does not exist. Exiting.", instr);
         process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
@@ -71,21 +75,16 @@ var assertFileExists = function(infile) {
 };
 
 
-
-var cheerioHtmlFile = function(htmlfile) {
-    return cheerio.load(fs.readFileSync(htmlfile));
-};
-
-
-
 var loadChecks = function(checksfile) {
-    return JSON.parse(fs.readFileSync(checksfile));
+    // process.exit(0);
+    var loadedChecks = fs.readFileSync(checksfile);
+    return JSON.parse(loadedChecks);
 };
 
 
-
-var checkHtmlFile = function(htmlfile, checksfile) {
-    $ = cheerioHtmlFile(htmlfile);
+var checkHtmlFile = function(htmlContent, checksfile) {
+    $ = htmlContent;
+    console.log("Loading checks in %s", checksfile);   
     var checks = loadChecks(checksfile).sort();
     var out = {};
     for(var ii in checks) {
@@ -106,20 +105,26 @@ var clone = function(fn) {
 
 
 if(require.main == module) {
+
+    var checksFile;
+  
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
         .option('-u, --url <html_file_url>', 'URL to index.html')
         .parse(process.argv);
+  
+    checksFile = program.checks;
 
-    var checkJson = checkHtmlFile(program.file, program.checks);
-
-
-    var response2console = buildfn(csvfile, headers);
-    rest.get(apiurl).on('complete', response2console);
-
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+    // do we have an URL?
+    if(null != program.url) {
+       console.log("Checking an URL");	
+       checkFromUrl(program.url);
+    } else {
+       // fallback to file
+       console.log("Checking a File");	
+	checkFromFile(program.file);
+    }
 
 } else {
     exports.checkHtmlFile = checkHtmlFile;
